@@ -1,0 +1,226 @@
+---
+title: "Regression Models Course Project"
+author: "Joerg Heintz"
+date: "2/9/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+require(dplyr)
+require(datasets)
+require(GGally)
+require(ggplot2)
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Management Summary
+The Motor Trend magazine has explored the "mtcars"" data set and investigated the relationship between a set of variables and miles per gallon (MPG) for different car types. Particularly two questions were of interest:
+
+1) “Is an automatic or manual transmission better for MPG”
+* Answer: If the car's weight [wt = 0] is not considered then manual transmission is better for mpg. Remark: There are no cars with automatic transmission < 2500lbs and no cars with manual transmission > 3800lbs 
+
+2) "Quantify the MPG difference between automatic and manual transmissions". 
+* Answer: The MPG difference depence on the wt, hp, and the tansmission of the car. The table gives you the overview on the E[MPG] (expected value, with confidence interval) with a given weight, horse power (quantiles) and manual or automatic transmission. The E[mpg] above a specific weight and horse power is higher for an automatic tranmission. 
+
+* Model: fit <- lm(mpg ~ (wt + hp) * factor(am)) 
+* Results
+```{r,echo=FALSE}
+fitint<-lm(mpg ~ (wt+hp) * factor(am), data = mtcars)
+myresults<-data.frame()
+meantable<-data.frame()
+a<-cbind(mean(mtcars$wt), mean(mtcars$hp), as.integer("1"))
+b<-cbind(mean(mtcars$wt), mean(mtcars$hp), as.integer("0"))
+c<-cbind(quantile(mtcars$wt)[2], quantile(mtcars$hp)[2], as.integer("1"))
+d<-cbind(quantile(mtcars$wt)[2], quantile(mtcars$hp)[2], as.integer("0"))
+e<-cbind(quantile(mtcars$wt)[4], quantile(mtcars$hp)[4], as.integer("1"))
+f<-cbind(quantile(mtcars$wt)[4], quantile(mtcars$hp)[4], as.integer("0"))
+meantable<-rbind.data.frame(c, d, a, b, e, f)
+colnames(meantable)<-c("wt", "hp", "am")
+rownames(meantable)<-c("Q25%(1)", "Q25%(0)","Q50%(1)", "Q50%(0)","Q75%(1)", "Q75%(0)")
+myresults<-predict(fitint, meantable, interval = "predict")
+myresults<-cbind(meantable, myresults)
+myresults<-as.data.frame(t(myresults))
+rownames(myresults)[4]<- "E[MPG]"
+rnames<-rownames(myresults)
+myresults <- myresults %>% mutate(Dif25 = `Q25%(1)`-`Q25%(0)`)
+myresults <- myresults %>% mutate(Dif50 = `Q50%(1)`-`Q50%(0)`)
+myresults <- myresults %>% mutate(Dif75 = `Q75%(1)`-`Q75%(0)`)
+myresults<-round(myresults, 2)
+rownames(myresults)<-rnames
+myresults
+```
+
+####Quantification of the diffence = manuel - automatic
+* +1.53 MPG for Q25: wt =2.58, hp 96.5 [manuel better automatic]
+* -0.74 MPG for Q50: wt = 3.22, hp = 146.69 [automatic better manuel]
+* -2.08 MPG for Q75: wt = 3.61, hp = 180 [automatic better manuel]
+The confidence intervals (lwr to upr) indicate that the results are not significant. Please check that table above. 
+
+# Data exploration: Looking at two basic models. 
+
+### Model 1: lm(mpg ~ am, data = mtcars)
+```{r,eval=TRUE}
+summary(lm(mpg ~ am, data = mtcars))$coefficients
+```
+Conclusion: The model estimates, statistically significant (p-values<0.05), an expected 7.245 mpg increase by switching from automatic (0) to manual (1) transmission. Further cars with manual transmission have in average 24.4 mpg (intercept = 17.15 + 7.24)and cars with automatic transmission 17.15 mpg.
+
+### Model 2: lm(mpg ~ ., data = mtcars)
+```{r,eval=TRUE}
+summary(lm(mpg ~., data = mtcars))$coefficients
+```
+Conclusion: The model estimates an expected 2.52 mpg increase by switching from automatic (0) to manual (1) transmission by holding all other variables constant. The estimate is with a p-value of 0.233 not statistically significant. Further, weight (wt), cylindar (cyl), horse power (hp), carburetors (carb) seem to have a negative effect on mpg. The transmission (am = 1) shifting to manual, and the number of gears have a positive effect on mpg. 
+
+#Determining the variables via nested model testing 
+
+```{r,eval=TRUE, echo = FALSE}
+fit1 <- lm(mpg ~ am, data = mtcars)
+fit3 <- update(fit1, mpg ~ am + wt)
+fit5 <- update(fit3, mpg ~ am + wt + hp)
+fit7 <- update(fit5, mpg ~ am + wt + hp + factor(cyl))
+fit9 <- update(fit7, mpg ~ am + wt + hp + factor(cyl) + factor(gear))
+fit11 <- update(fit9, mpg ~ am + wt + hp + factor(cyl) + factor(gear)+ disp + factor(vs) + qsec + factor(carb))
+anova(fit1, fit3, fit5, fit7, fit9, fit11 )
+```
+Conclusion: Based the variance table, which I got from the nested model testing I chose the Model 3 with lm(mpg ~ am + wt + hp, data = mtcars). The P-values are for the hypothesis test of whether the new variables are all zero or not (i.e. whether or not they’re necessary). So this model would
+conclude Model 3 contains the needed variables. Unclear to that point is if there are interactions between the variables.
+
+* Model: fitint<- lm(mpg ~ am + wt + hp, data = mtcars)
+
+#Deriving Model 3: Consider correlations between wt, am, and hp 
+See Correlation Table in appendix (weight, horse power, transmission)
+Conclusion: 
+* The correlation table shows strong correlations between wt, hp, and wt. So the model was adjusted.
+* Model: fitint<-lm(mpg ~ (wt+hp) * factor(am), data = mtcars)
+
+### Data Exploration II Model 3: Distribution of manual & automatic transmission
+The following plot indicates in different colors manual (green) and automatic (salmon) transmission in dependence of weight, hp not considered. See figure Relationship between MPG, weight, and transmission, hp not considered
+
+Conclusion: The plot shows a dependency between weight and transmission. Cars with lower weight are equipped with manual transmission and cars with heigher weight with automatic transmission.
+
+
+###Check Model Fit
+
+* Model: fit<-lm(mpg ~ (wt + hp) * am, data = mtcars)
+
+```{r,eval=TRUE}
+fit<-lm(mpg ~ (wt + hp) * factor(am), data = mtcars)
+summary(fit)  
+```
+
+Interpretation: 
+For am = 0, wt = 0, hp = 0 the intercept 30.7 MPG. The slope indicates a decrease (not significant) of -1.86 MPG per 1000 lbs (am=0) holding all other variables constant. 
+For am = 1, wt = 0, hp = 0, the intercept is 44.5 MPG. The slope indicates a (significant) of -5.77 MPG/1000 lbs holding all other variables constant. 
+
+### Assess the Model 3 fit by checking the residuals 
+
+* Patterns fitted vs. residual plot
+There are no patterns identifiable, which indicates a prober model fit. 
+
+* Cresiduals normally distributed QQ plot
+The distribution of the residuals independent identical distributed, which indicates a prober model fit.
+
+* Outliers scale location vs standardized residuals
+The standard residual distribution shows no pattern, which indicates a prober model fit.
+
+* Residuals vs. levarage
+to see if specific points (cars) falsify the entire model results. No outliers are identified that would leverage and influence the MPG.
+
+See Appendix "Resicual Plots"
+
+# Quantify the differences between manuel and automatic transmission
+For comparing the mpg values of automatic and manual transmission I calculated MPG for a set of different weight and horse power values. 
+
+The table gives you the overview on the difference E[MPG] (expected value, with confidence interval) with a given weight, horse power (quantiles) and manual or automatic transmission. See column "diff25, diff50, diff75". The E[mpg] above a specific weight and horse power is higher for an automatic tranmission. 
+
+
+```{r,echo=FALSE}
+fitint<-lm(mpg ~ (wt+hp) * factor(am), data = mtcars)
+myresults<-data.frame()
+meantable<-data.frame()
+a<-cbind(mean(mtcars$wt), mean(mtcars$hp), as.integer("1"))
+b<-cbind(mean(mtcars$wt), mean(mtcars$hp), as.integer("0"))
+c<-cbind(quantile(mtcars$wt)[2], quantile(mtcars$hp)[2], as.integer("1"))
+d<-cbind(quantile(mtcars$wt)[2], quantile(mtcars$hp)[2], as.integer("0"))
+e<-cbind(quantile(mtcars$wt)[4], quantile(mtcars$hp)[4], as.integer("1"))
+f<-cbind(quantile(mtcars$wt)[4], quantile(mtcars$hp)[4], as.integer("0"))
+meantable<-rbind.data.frame(c, d, a, b, e, f)
+colnames(meantable)<-c("wt", "hp", "am")
+rownames(meantable)<-c("Q25%(1)", "Q25%(0)","Q50%(1)", "Q50%(0)","Q75%(1)", "Q75%(0)")
+myresults<-predict(fitint, meantable, interval = "predict")
+myresults<-cbind(meantable, myresults)
+myresults<-as.data.frame(t(myresults))
+rownames(myresults)[4]<- "E[MPG]"
+rnames<-rownames(myresults)
+myresults <- myresults %>% mutate(Dif25 = `Q25%(1)`-`Q25%(0)`)
+myresults <- myresults %>% mutate(Dif50 = `Q50%(1)`-`Q50%(0)`)
+myresults <- myresults %>% mutate(Dif75 = `Q75%(1)`-`Q75%(0)`)
+myresults<-round(myresults, 2)
+rownames(myresults)<-rnames
+myresults
+```
+
+
+# Appendix
+## Model 3: Figure Residual Plots
+```{r,eval=TRUE}
+data(mtcars); par(mfrow = c(2, 2))
+fitint<-lm(mpg ~ (wt+hp) * factor(am), data = mtcars); plot(fitint)
+```
+
+## Model 3: Figure Relationship between MPG, weight, and transmission, hp not considered
+```{r,eval=TRUE, echo = FALSE, fig.width=4, fig.height=3}
+require(ggplot2)
+fitint<-lm(mpg ~ wt * factor(am), data = mtcars)
+s11<-coef(fitint)[2]; i11<-coef(fitint)[1]
+s12<-s11 +coef(fitint)[4]; i12<-i11 + coef(fitint)[3]
+g = ggplot(mtcars, aes(x = wt, y = mpg, color = factor(am)))
+g1 = geom_boxplot()
+g = g + geom_point(size = 3, colour = "black") + geom_point(size = 4)
+g = g + xlab("Weight") + ylab("Miles per Gallon")
+g = g + geom_abline(slope = s11, intercept = i11, colour = "salmon")
+g = g + geom_abline(slope = s12, intercept = i12, colour = "lightblue" )
+g
+summary(fitint)$coef
+```
+
+## Model 3: Figure Correlation Table (weight, horse power, transmission)
+```{r,eval=TRUE, echo = FALSE}
+my_fn<-function(data, mapping, method = "loess", ...) {
+  p<-ggplot(data = data, mapping = mapping) + 
+    geom_point() +
+    geom_smooth(method = method, ...)
+  p}
+
+g = ggpairs(mtcars[,c("mpg", "wt", "hp", "am")], lower = list(continuous = my_fn))
+g
+```
+
+# Code Chunks
+
+###Determining the variables via nested model testing 
+
+```{r,eval=FALSE,}
+fit1 <- lm(mpg ~ am, data = mtcars)
+fit3 <- update(fit1, mpg ~ am + wt)
+fit5 <- update(fit3, mpg ~ am + wt + hp)
+fit7 <- update(fit5, mpg ~ am + wt + hp + factor(cyl))
+fit9 <- update(fit7, mpg ~ am + wt + hp + factor(cyl) + factor(gear))
+fit11 <- update(fit9, mpg ~ am + wt + hp + factor(cyl) + factor(gear)+ disp + factor(vs) + qsec + factor(carb))
+anova(fit1, fit3, fit5, fit7, fit9, fit11 )
+```
+
+### Model 3: Relationship between MPG, weight, and transmission, hp not considered
+```{r,eval=FALSE}
+require(ggplot2)
+fitint<-lm(mpg ~ wt * factor(am), data = mtcars)
+summary(fitint)$coef
+s11<-coef(fitint)[2]; i11<-coef(fitint)[1]
+s12<-s11 +coef(fitint)[4]; i12<-i11 + coef(fitint)[3]
+g = ggplot(mtcars, aes(x = wt, y = mpg, color = factor(am)))
+g1 = geom_boxplot()
+g = g + geom_point(size = 3, colour = "black") + geom_point(size = 4)
+g = g + xlab("Weight") + ylab("Miles per Gallon")
+g = g + geom_abline(slope = s11, intercept = i11, colour = "salmon")
+g = g + geom_abline(slope = s12, intercept = i12, colour = "lightblue" )
+g
+```
